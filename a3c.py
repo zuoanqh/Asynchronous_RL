@@ -85,6 +85,13 @@ class A3C:
                 self.test(num_actions)
             else:
                 self.train(num_actions)
+
+        self.state = self.model = self.model_params = self.new_state = self.target_model = self.target_model_params = \
+            self.q_values = self.target_q_values = self.update_target = self.actions = self.targets = \
+            self.learning_rate = self.grad_update = self.lr = self.value_model, self.policy_model = \
+            self.value_model_params = self.policy_model_params = self.value = self.policy_values = self.local_states = \
+            self.local_p_model = self.local_v_model = self.p_params = self.v_params = self.local_policy = \
+            self.local_value = self.update_policy = self.update_value = None
                 
     def create_operations(self, num_actions):
 
@@ -169,7 +176,7 @@ class A3C:
         # create instance of Doom environment
         env = Env(env, FLAGS.width, FLAGS.height, FLAGS.history_length, FLAGS.game_type)
    
-        print 'Starting thread ' + str(thread_id) 
+        print( 'Starting thread ' + str(thread_id))
         time.sleep(3*thread_id)
         
         # Get initial game observation
@@ -252,7 +259,7 @@ class A3C:
                                                           self.targets: targets})
                 
             if done:
-                print "THREAD:", thread_id, "/ TIME", self.T, "/ TIMESTEP", counter, "/ REWARD", episode_reward
+                print( "THREAD:", thread_id, "/ TIME", self.T, "/ TIMESTEP", counter, "/ REWARD", episode_reward)
                 episode_reward = 0
                 
                 # Get initial game observation
@@ -285,12 +292,12 @@ class A3C:
     
     def test(self, num_actions):
         self.saver.restore(self.session, FLAGS.checkpoint_path)
-        print "Restored model weights from ", FLAGS.checkpoint_path
+        print ("Restored model weights from ", FLAGS.checkpoint_path)
         monitor_env = gym.make(FLAGS.game)
         monitor_env.monitor.start("/tmp/" + FLAGS.game ,force=True)
         env = Env(monitor_env, FLAGS.width, FLAGS.height, FLAGS.history_length, FLAGS.game_type)
 
-        for i_episode in xrange(FLAGS.num_eval_episodes):
+        for i_episode in range(FLAGS.num_eval_episodes):
             state = env.get_initial_state()
             episode_reward = 0
             done = False
@@ -301,7 +308,7 @@ class A3C:
                 new_state, reward, done = env.step(action_index)
                 state = new_state
                 episode_reward += reward
-            print "Finished episode " + str(i_episode + 1) + " with score " + str(episode_reward)
+            print ("Finished episode " + str(i_episode + 1) + " with score " + str(episode_reward))
         
         monitor_env.monitor.close()
 

@@ -1,9 +1,10 @@
 import sys
 import gym
 import os
+
 os.environ["KERAS_BACKEND"] = "tensorflow"
 from keras.models import Model
-from keras.layers import Input, Flatten, Dense,  Convolution2D
+from keras.layers import Input, Flatten, Dense, Convolution2D
 from keras import backend as K
 import numpy as np
 import random
@@ -20,7 +21,8 @@ flags.DEFINE_integer('tmax', 80000000, 'Number of training timesteps.')
 flags.DEFINE_integer('width', 84, 'Scale screen to this width.')
 flags.DEFINE_integer('height', 84, 'Scale screen to this height.')
 flags.DEFINE_integer('history_length', 4, 'Use this number of recent screens as the environment state.')
-flags.DEFINE_integer('network_update_frequency', 5, 'Frequency with which each actor learner thread does an async gradient update')
+flags.DEFINE_integer('network_update_frequency', 5,
+                     'Frequency with which each actor learner thread does an async gradient update')
 flags.DEFINE_integer('target_network_update_frequency', 40000, 'Reset the target network every n timesteps')
 flags.DEFINE_float('learning_rate', 0.0001, 'Initial learning rate.')
 flags.DEFINE_float('decay', 0.99, 'decay of rmsprop.')
@@ -31,47 +33,49 @@ flags.DEFINE_boolean('show_training', True, 'If true, have gym render evironment
 flags.DEFINE_boolean('testing', False, 'If true, run gym evaluation')
 flags.DEFINE_string('checkpoint_path', 'path/to/recent.ckpt', 'Path to recent checkpoint to use for evaluation')
 flags.DEFINE_integer('num_eval_episodes', 100, 'Number of episodes to run gym evaluation.')
-flags.DEFINE_integer('checkpoint_interval', 100000,'Checkpoint the model (i.e. save the parameters) every n ')
-flags.DEFINE_string('game_type', 'Doom','Doom or atari game')
+flags.DEFINE_integer('checkpoint_interval', 100000, 'Checkpoint the model (i.e. save the parameters) every n ')
+flags.DEFINE_string('game_type', 'Doom', 'Doom or atari game')
 FLAGS = flags.FLAGS
-
 
 T = 0
 TMAX = FLAGS.tmax
 
 t_max = 5
 
+
 def create_model(num_actions, agent_history_length, resized_width, resized_height):
     with tf.device("/cpu:0"):
         state = tf.placeholder("float", [None, agent_history_length, resized_width, resized_height])
         inputs = Input(shape=(agent_history_length, resized_width, resized_height,))
-        model = Convolution2D(nb_filter=16, nb_row=8, nb_col=8, subsample=(4,4), activation='relu', border_mode='same')(inputs)
-        model = Convolution2D(nb_filter=32, nb_row=4, nb_col=4, subsample=(2,2), activation='relu', border_mode='same')(model)
+        model = Convolution2D(nb_filter=16, nb_row=8, nb_col=8, subsample=(4, 4), activation='relu',
+                              border_mode='same')(inputs)
+        model = Convolution2D(nb_filter=32, nb_row=4, nb_col=4, subsample=(2, 2), activation='relu',
+                              border_mode='same')(model)
         model = Flatten()(model)
         model = Dense(output_dim=256, activation='relu')(model)
         q_values = Dense(output_dim=num_actions, activation='linear')(model)
         m = Model(input=inputs, output=q_values)
     return state, m
 
+
 class N_Steps_DQN:
-    
     def __init__(self, num_actions):
-        
+
         self.TMAX = TMAX
         self.T = 0
-        print "start object"
+        print("start object")
         g = tf.Graph()
         with g.as_default(), tf.Session() as self.session:
-            
+
             K.set_session(self.session)
             self.create_operations(num_actions)
             self.saver = tf.train.Saver()
-        
+
             if FLAGS.testing:
                 self.test(num_actions)
             else:
                 self.train(num_actions)
-                
+
     def create_operations(self, num_actions):
 
         # create model and state
@@ -81,36 +85,38 @@ class N_Steps_DQN:
         self.model_params = self.model.trainable_weights
 
         # create target network
-        self.new_state, self.target_model = create_model(num_actions,  FLAGS.history_length, FLAGS.width, FLAGS.height)
+        self.new_state, self.target_model = create_model(num_actions, FLAGS.history_length, FLAGS.width, FLAGS.height)
 
         # parameters of the target model
         self.target_model_params = self.target_model.trainable_weights
 
         # operation for q values
         self.q_values = self.model(self.state)
-         
+
         # operation for q values of target mdoel
         self.target_q_values = self.target_model(self.new_state)
 
         # operation for updating target's parameters
-        self.update_target = [self.target_model_params[i].assign(self.model_params[i]) for i in range(len(self.target_model_params))]
+        self.update_target = [self.target_model_params[i].assign(self.model_params[i]) for i in
+                              range(len(self.target_model_params))]
 
         self.local_states = []
         self.local_model = []
         self.params = []
         self.update_local_model = []
-        self.local_values=[]
+        self.local_values = []
         self.optimizers = []
-        
+
         for i in range(FLAGS.num_concurrent):
             s, m = create_model(num_actions, FLAGS.history_length, FLAGS.width, FLAGS.height)
             self.local_states.append(s)
             self.local_model.append(m)
             self.params.append(m.trainable_weights)
             self.local_values.append(m(s))
-            self.update_local_model.append([self.params[i][j].assign(self.model_params[j]) for j in range(len(self.params[i]))])
+            self.update_local_model.append(
+                [self.params[i][j].assign(self.model_params[j]) for j in range(len(self.params[i]))])
             self.optimizers.append(tf.train.AdamOptimizer(FLAGS.learning_rate))
-        print "creating operations"
+        print("creating operations")
         # operations for training model
 
         # placeholder for actions
@@ -123,31 +129,31 @@ class N_Steps_DQN:
         # except the value of the action which executed.
         # so action_q_values has only the qvalue with the same index
         # as the action that executed
-        action_q_values = tf.reduce_sum(tf.mul(self.q_values, self.actions), reduction_indices=1)
+        action_q_values = tf.reduce_sum(tf.multiply(self.q_values, self.actions), reduction_indices=1)
 
         # define cost
         cost = tf.reduce_mean(tf.square(self.targets - action_q_values))
-        
+
         # define training function
         self.grad_update = []
         for i in range(FLAGS.num_concurrent):
             self.grad_update.append(self.optimizers[i].minimize(cost, var_list=self.model_params))
 
     def sample_final_epsilon(self):
-        possible_epsilon = [0.1]*4000 + [0.5]*3000 + [0.01]*3000
+        possible_epsilon = [0.1] * 4000 + [0.5] * 3000 + [0.01] * 3000
         return random.choice(possible_epsilon)
 
     def actor_learner_thread(self, env, thread_id, num_actions):
 
         # create instance of Doom environment
         env = Env(env, FLAGS.width, FLAGS.height, FLAGS.history_length, FLAGS.game_type)
-        
+
         initial_epsilon = 1
         epsilon = 1
-        final_epsilon = self.sample_final_epsilon()    
-        print 'Starting thread ' + str(thread_id) + ' with final epsilon ' + str(final_epsilon)
-        time.sleep(3*thread_id)
-        
+        final_epsilon = self.sample_final_epsilon()
+        print('Starting thread {} with final epsilon {}'.format(str(thread_id), str(final_epsilon)))
+        time.sleep(3 * thread_id)
+
         # Get initial game observation
         state = env.get_initial_state()
 
@@ -157,7 +163,7 @@ class N_Steps_DQN:
         frames = 0
         counter = 0
         while self.T < self.TMAX:
-            
+
             done = False
 
             # clear gradients
@@ -169,15 +175,16 @@ class N_Steps_DQN:
             t = 0
             t_start = t
             self.session.run(self.update_local_model[thread_id])
-            
-            while not (done or ((t - t_start)  == t_max)):
+
+            while not (done or ((t - t_start) == t_max)):
                 # forward pass of network. Get Q(s,a)
-                q_values = self.local_values[thread_id].eval(session = self.session, feed_dict = {self.local_states[thread_id] : [state]})
+                q_values = self.local_values[thread_id].eval(session=self.session,
+                                                             feed_dict={self.local_states[thread_id]: [state]})
 
                 # define list of actions. All values are zeros except , the
                 # value of action that is executed
                 action_list = np.zeros([num_actions])
-                
+
                 # chose action based on current policy
                 if random.random() <= epsilon:
                     action_index = random.randrange(num_actions)
@@ -188,7 +195,7 @@ class N_Steps_DQN:
                 # add state and action to list
                 actions.append(action_list)
                 states.append(state)
-                
+
                 # reduce epsilon
                 if epsilon > final_epsilon:
                     epsilon -= (initial_epsilon - final_epsilon) / FLAGS.anneal_epsilon_timesteps
@@ -209,46 +216,50 @@ class N_Steps_DQN:
                 frames += 1
                 episode_reward += reward
                 mean_q += np.max(q_values)
-                
+
                 # update_target_network
-                if self.T % FLAGS.target_network_update_frequency==0:
-                    print "Target Network Updated"
+                if self.T % FLAGS.target_network_update_frequency == 0:
+                    print("Target Network Updated")
                     self.session.run(self.update_target)
-    
+
                 # Save model progress
                 if self.T % FLAGS.checkpoint_interval < 400:
                     self.T += 400
                     if FLAGS.game_type == 'Doom':
-                        self.saver.save(self.session, FLAGS.checkpoint_dir+"/" + FLAGS.game.split("/")[1] + ".ckpt" , global_step = self.T)
+                        self.saver.save(self.session, FLAGS.checkpoint_dir + "/" + FLAGS.game.split("/")[1] + ".ckpt",
+                                        global_step=self.T)
                     else:
-                        self.saver.save(self.session, FLAGS.checkpoint_dir+"/" + FLAGS.game + ".ckpt" , global_step = self.T)
+                        self.saver.save(self.session, FLAGS.checkpoint_dir + "/" + FLAGS.game + ".ckpt",
+                                        global_step=self.T)
 
             if done:
                 R_t = 0
             else:
-                R_t = np.max(self.target_q_values.eval(session = self.session, feed_dict = {self.new_state : [state]}))
+                R_t = np.max(self.target_q_values.eval(session=self.session, feed_dict={self.new_state: [state]}))
 
             targets = np.zeros((t - t_start))
-                
-            for i in range(t - t_start -1 , -1, -1):
+
+            for i in range(t - t_start - 1, -1, -1):
                 R_t = prev_reward[i] + FLAGS.gamma * R_t
                 targets[i] = R_t
 
-            #update q value network
-            self.session.run(self.grad_update[thread_id], feed_dict = {self.state: states,
-                                                          self.actions: actions,
-                                                          self.targets: targets})
+            # update q value network
+            self.session.run(self.grad_update[thread_id], feed_dict={self.state: states,
+                                                                     self.actions: actions,
+                                                                     self.targets: targets})
 
             if done:
-                print "THREAD:", thread_id, "/ TIME", self.T, "/ TIMESTEP", counter, "/ EPSILON", epsilon, "/ REWARD", episode_reward, "/ Q_MAX %.4f" % (mean_q/float(frames)), "/ EPSILON PROGRESS", counter/float(FLAGS.anneal_epsilon_timesteps)
+                print("THREAD:", thread_id, "/ TIME", self.T, "/ TIMESTEP", counter, "/ EPSILON", epsilon, "/ REWARD",
+                      episode_reward, "/ Q_MAX %.4f" % (mean_q / float(frames)), "/ EPSILON PROGRESS",
+                      counter / float(FLAGS.anneal_epsilon_timesteps))
                 episode_reward = 0
                 file_path = 'rewards'
                 try:
-                    with open(file_path,'a+') as f:
-                        f.write(str(episode_reward) + ', '+ str((mean_q/float(frames)))+'\n')
+                    with open(file_path, 'a+') as f:
+                        f.write(str(episode_reward) + ', ' + str((mean_q / float(frames))) + '\n')
                 except IOError:
-                    with open(file_path,'w+') as f:
-                        f.write(str(episode_reward) + ', ' + str((mean_q/float(frames))) +'\n')
+                    with open(file_path, 'w+') as f:
+                        f.write(str(episode_reward) + ', ' + str((mean_q / float(frames))) + '\n')
                 f.close()
                 # Get initial game observation
                 episode_reward = 0
@@ -257,7 +268,7 @@ class N_Steps_DQN:
                 state = env.get_initial_state()
 
     def train(self, num_actions):
-        
+
         # Initialize variables
         self.session.run(tf.initialize_all_variables())
 
@@ -269,14 +280,14 @@ class N_Steps_DQN:
 
         # inititalize learning rate
         self.lr = FLAGS.learning_rate
-        
+
         if not os.path.exists(FLAGS.checkpoint_dir):
             os.makedirs(FLAGS.checkpoint_dir)
-        
-
 
         # Start num_concurrent actor-learner training threads
-        actor_learner_threads = [threading.Thread(target=self.actor_learner_thread, args=( envs[thread_id], thread_id, num_actions)) for thread_id in range(FLAGS.num_concurrent)]
+        actor_learner_threads = [
+            threading.Thread(target=self.actor_learner_thread, args=(envs[thread_id], thread_id, num_actions)) for
+            thread_id in range(FLAGS.num_concurrent)]
         for t in actor_learner_threads:
             t.start()
 
@@ -285,42 +296,44 @@ class N_Steps_DQN:
             if FLAGS.show_training:
                 for env in envs:
                     env.render()
-        
+
         for t in actor_learner_threads:
-            t.join() 
-    
+            t.join()
+
     def test(self, num_actions):
         self.saver.restore(self.session, FLAGS.checkpoint_path)
-        print "Restored model weights from ", FLAGS.checkpoint_path
+        print("Restored model weights from ", FLAGS.checkpoint_path)
         monitor_env = gym.make(FLAGS.game)
-        monitor_env.monitor.start("/tmp/" + FLAGS.game ,force=True)
+        monitor_env.monitor.start("/tmp/" + FLAGS.game, force=True)
         env = Env(monitor_env, FLAGS.width, FLAGS.height, FLAGS.history_length, FLAGS.game_type)
-        
-        for i_episode in xrange(FLAGS.num_eval_episodes):
+
+        for i_episode in range(FLAGS.num_eval_episodes):
             state = env.get_initial_state()
             episode_reward = 0
             done = False
             while not done:
                 monitor_env.render()
-                q_values = self.q_values.eval(session = self.session, feed_dict = {self.state : [state]})
+                q_values = self.q_values.eval(session=self.session, feed_dict={self.state: [state]})
                 action_index = np.argmax(q_values)
                 new_state, reward, done = env.step(action_index)
                 state = new_state
                 episode_reward += reward
-            print "Finished episode " + str(i_episode + 1) + " with score " + str(episode_reward)
-        
+            print("Finished episode " + str(i_episode + 1) + " with score " + str(episode_reward))
+
         monitor_env.monitor.close()
+
 
 def get_num_actions():
     env = gym.make(FLAGS.game)
     env = Env(env, FLAGS.width, FLAGS.height, FLAGS.history_length, FLAGS.game_type)
     num_actions = len(env.gym_actions)
     return num_actions
-    
-def main():
 
+
+def main():
     num_actions = get_num_actions()
     N_Steps_DQN(num_actions)
+
 
 if __name__ == "__main__":
     main()
